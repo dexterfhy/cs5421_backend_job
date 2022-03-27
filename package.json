@@ -1,0 +1,23 @@
+{
+  "name": "backend-job-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "job-server.js",
+  "scripts": {
+    "build-dev": "rm -r ./build; tsc && mkdir ./build/configs && cp ./src/configs/.env* ./build/configs",
+    "build-prod": "rm -r ./build; tsc && mkdir ./build/configs && cp ./src/configs/.env* ./build/configs",
+    "start-dev": "nodemon ./build/job-server.js",
+    "start-prod": "node ./build/job-server.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/kafkajs": "^1.9.0",
+    "@types/pg": "^8.6.5"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "kafkajs": "^1.16.0",
+    "pg": "^8.7.3"
+  }
+}
