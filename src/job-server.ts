@@ -12,7 +12,7 @@ import {
     KAFKA_JOB_ATTEMPT_SLOW_CONSUMER_HEARTBEAT_INTERVAL, KAFKA_JOB_ATTEMPT_SLOW_CONSUMER_MAX_BYTES, 
     KAFKA_JOB_ATTEMPT_SLOW_CONSUMER_MAX_BYTES_PER_PARTITION, KAFKA_JOB_ATTEMPT_SLOW_CONSUMER_SESSION_TIMEOUT, 
     KAFKA_JOB_ATTEMPT_SLOW_TOPIC, KAFKA_JOB_ATTEMPT_SLOW_TOPIC_NUM_PARTITIONS, 
-    KAFKA_JOB_ATTEMPT_SLOW_TOPIC_REPLICATION_FACTOR, KAFKA_JOB_INIT_COMPLETION_EVENT_STATUS_COMPLETED, KAFKA_JOB_INIT_COMPLETION_EVENT_STATUS_FAILED, KAFKA_JOB_INIT_COMPLETION_TOPIC, 
+    KAFKA_JOB_ATTEMPT_SLOW_TOPIC_REPLICATION_FACTOR, KAFKA_JOB_INIT_COMPLETION_TOPIC, 
     KAFKA_JOB_INIT_COMPLETION_TOPIC_NUM_PARTITIONS, KAFKA_JOB_INIT_COMPLETION_TOPIC_REPLICATION_FACTOR, 
     KAFKA_JOB_INIT_CONSUMER_GROUP_ID, KAFKA_JOB_INIT_CONSUMER_HEARTBEAT_INTERVAL, KAFKA_JOB_INIT_CONSUMER_MAX_BYTES, 
     KAFKA_JOB_INIT_CONSUMER_MAX_BYTES_PER_PARTITION, KAFKA_JOB_INIT_CONSUMER_SESSION_TIMEOUT, 
@@ -22,26 +22,9 @@ import {
     PostgreSQLQueryType, POSTGRESQL_ADMIN_QUERY_TIMEOUT, POSTGRESQL_ADMIN_STATEMENT_TIMEOUT, POSTGRESQL_FAST_QUERY_TIMEOUT, 
     POSTGRESQL_FAST_STATEMENT_TIMEOUT, POSTGRESQL_SLOW_QUERY_TIMEOUT, POSTGRESQL_SLOW_STATEMENT_TIMEOUT 
 } from "./constants/postgreSQL";
-// import { Pool, Client } from "pg"
-// import {Worker, isMainThread, parentPort, workerData} from "worker_threads"
-// import { PostgreSQLQueryType } from "./constants/postgreSQL";
-// import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
-// import { ConfigResourceTypes, Kafka } from "kafkajs";
+import { kafkaJobAttemptEventHandler, kafkaJobInitEventHandler } from "./job-handlers";
 import { KafkaClientService } from './services/kafka-client-service';
 import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
-
-interface JobInitEventValue {
-    challenge_id: number,
-    challenge_name?: string,
-    expires_at: string,
-    times_to_run?: number,
-    init?: string,
-    solution?: string,
-    test_cases?: {
-        id: number,
-        data: string
-    }[]
-}
 
 (async () => {
     const pathsToEnvironmentVariables: string[] = 
@@ -67,7 +50,7 @@ interface JobInitEventValue {
         fastQueryTimeout: POSTGRESQL_FAST_QUERY_TIMEOUT,
         slowStatementTimeout: POSTGRESQL_SLOW_STATEMENT_TIMEOUT,
         slowQueryTimeout: POSTGRESQL_SLOW_QUERY_TIMEOUT,
-        adminQueryPoolMaxConnections: 1,
+        adminQueryPoolMaxConnections: 2,
         fastQueryPoolMaxConnections: parseInt(process.env.DB_HOST_NUM_CPUS!) / 2,
         slowQueryPoolMaxConnections: parseInt(process.env.DB_HOST_NUM_CPUS!) / 2,
         applicationName: process.env.DB_APPLICATION_NAME
@@ -91,18 +74,22 @@ interface JobInitEventValue {
         rowMode: 'array'
     }, PostgreSQLQueryType.ADMIN_QUERY))!;
     if (!rows[0][0]) {
-        await postgreSQLAdapter.query({
-            text: 
-                `CREATE TABLE public.${process.env.DB_CHALLENGE_TABLE_NAME!} (
-                    challenge_id    INTEGER PRIMARY KEY,
-                    challenge_name  VARCHAR(100),
-                    expires_at      TIMESTAMP WITH TIME ZONE,
-                    init            VARCHAR(10000),
-                    test_cases      JSON,
-                    solution        VARCHAR(10000),
-                    times_to_run    INTEGER
-                )`
-        }, PostgreSQLQueryType.ADMIN_QUERY);
+        await postgreSQLAdapter.schematizedQuery(
+            "public", 
+            {
+                text: 
+                    `CREATE TABLE ${process.env.DB_CHALLENGE_TABLE_NAME!} (
+                        challenge_id    INTEGER PRIMARY KEY,
+                        challenge_name  VARCHAR(100),
+                        expires_at      TIMESTAMP WITH TIME ZONE,
+                        init            VARCHAR(10000),
+                        test_cases      JSON,
+                        solution        VARCHAR(10000),
+                        times_to_run    INTEGER
+                    )`
+            }, 
+            PostgreSQLQueryType.ADMIN_QUERY
+        );
         console.log("Challenge table has been successfully created");
     }
 
@@ -196,15 +183,49 @@ interface JobInitEventValue {
         partitionsConsumedConcurrently: 1,
         eachMessage: async ({ topic, message, heartbeat }) => {
             if (topic == KAFKA_JOB_INIT_TOPIC) {
-                
+                await kafkaJobInitEventHandler(
+                    postgreSQLAdapter, 
+                    PostgreSQLQueryType.ADMIN_QUERY, 
+                    kafkaClientService, 
+                    0, 
+                    message, 
+                    heartbeat
+                );
             }
         }
     }, 0);
-    // postgreSQLAdapter.query({text: "select * from challenge"}, PostgreSQLQueryType.ADMIN_QUERY).then((res) => console.log(JSON.stringify(res!.rows[0].test_cases)));
-    // postgreSQLAdapter.query({
-    //     text: 
-    //     `insert into challenge values (2, 'fabian pascal', now(), 'create table', '${JSON.stringify([{"id": 1, "data": "insert statement"}, {"id": 2, "data": "insert statement"}])}', 'solution select', 10);`
-    // }, PostgreSQLQueryType.ADMIN_QUERY).then((res) => console.log(res));
+
+    kafkaClientService.consumerRun({
+        partitionsConsumedConcurrently: cpus().length,
+        eachMessage: async ({ topic, message, heartbeat }) => {
+            if (topic == KAFKA_JOB_ATTEMPT_FAST_TOPIC) {
+                await kafkaJobAttemptEventHandler(
+                    postgreSQLAdapter,
+                    PostgreSQLQueryType.FAST_QUERY,
+                    kafkaClientService,
+                    1,
+                    message,
+                    heartbeat
+                );
+            }
+        }
+    }, 1);
+
+    kafkaClientService.consumerRun({
+        partitionsConsumedConcurrently: cpus().length,
+        eachMessage: async ({ topic, message, heartbeat }) => {
+            if (topic == KAFKA_JOB_ATTEMPT_SLOW_TOPIC) {
+                await kafkaJobAttemptEventHandler(
+                    postgreSQLAdapter,
+                    PostgreSQLQueryType.SLOW_QUERY,
+                    kafkaClientService,
+                    1,
+                    message,
+                    heartbeat
+                );
+            }
+        }
+    }, 2);
 })();
  
 function registerEventHandlers(
@@ -214,62 +235,6 @@ function registerEventHandlers(
     process.on("beforeExit", beforeExitHandler)
            .on("SIGINT", signalHandler)
            .on("SIGTERM", signalHandler);
-}
-
-async function kafkaJobInitEventHandler(
-    postgreSQLAdapter: PostgreSQLAdapter,
-    kafkaClientService: KafkaClientService,
-    producerIndex: number,
-    message: KafkaMessage, 
-    heartbeat: () => Promise<void>
-) {
-    const heartbeatTimer: NodeJS.Timer = setInterval(heartbeat, KAFKA_JOB_INIT_CONSUMER_HEARTBEAT_INTERVAL)
-    const jobInitEventValue: JobInitEventValue = JSON.parse(message.value!.toString());
-    try {
-        const { rows }: { rows: boolean[][] } = (await postgreSQLAdapter.query({
-            text: `SELECT EXISTS (SELECT * FROM ${process.env.DB_CHALLENGE_TABLE_NAME!} WHERE challenge_id = $1)`,
-            values: [jobInitEventValue.challenge_id.toString()],
-            rowMode: 'array'
-        }, PostgreSQLQueryType.ADMIN_QUERY))!;
-        if (rows[0][0]) {
-            await postgreSQLAdapter.query({
-                text: `UPDATE ${process.env.DB_CHALLENGE_TABLE_NAME!} SET expires_at = $1 WHERE challenge_id = $2`,
-                values: [new Date(jobInitEventValue.expires_at), jobInitEventValue.challenge_id],
-            }, PostgreSQLQueryType.ADMIN_QUERY);
-        } else {
-            try {
-                
-            } catch (error) {
-                
-                throw error;
-            }
-        }
-        await kafkaClientService.producerSend({
-            topic: KAFKA_JOB_INIT_COMPLETION_TOPIC,
-            messages: [{
-                key: jobInitEventValue.challenge_id.toString(),
-                value: JSON.stringify({
-                    challenge_id: jobInitEventValue.challenge_id,
-                    status: KAFKA_JOB_INIT_COMPLETION_EVENT_STATUS_COMPLETED
-                })
-            }]
-        }, producerIndex);
-    } catch(error) {
-        await kafkaClientService.producerSend({
-            topic: KAFKA_JOB_INIT_COMPLETION_TOPIC,
-            messages: [{
-                key: jobInitEventValue.challenge_id.toString(),
-                value: JSON.stringify({
-                    challenge_id: jobInitEventValue.challenge_id,
-                    status: KAFKA_JOB_INIT_COMPLETION_EVENT_STATUS_FAILED,
-                    error: (error as Error).toString()
-                })
-            }]
-        }, producerIndex);
-    } finally {
-        clearInterval(heartbeatTimer);
-    }
-
 }
 
 

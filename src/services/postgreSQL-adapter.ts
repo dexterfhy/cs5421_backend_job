@@ -111,6 +111,30 @@ export class PostgreSQLAdapter {
         }
     }
 
+    public async schematizedQuery(schemaName: string, query: PostgreSQLQuery, queryType: PostgreSQLQueryType): Promise<void | QueryResult<any>> {
+        let client: PoolClient | undefined;
+        let queryResult: QueryResult<any> | undefined;
+        switch (queryType) {
+            case PostgreSQLQueryType.ADMIN_QUERY:
+                client = await this.adminQueryPool.connect();
+                break;
+            case PostgreSQLQueryType.FAST_QUERY:
+                client = await this.fastQueryPool.connect();
+                break;
+            case PostgreSQLQueryType.SLOW_QUERY:
+                client = await this.slowQueryPool.connect();
+            default:
+                return;
+        }
+        try {
+            await client.query(`SET search_path TO ${schemaName}`);
+            queryResult = await client.query(query);
+        } finally {
+            client.release();
+        }
+        return queryResult;
+    }
+
     public async transaction(queries: PostgreSQLQuery[], transactionType: PostgreSQLQueryType): Promise<void> {
         let client: PoolClient | undefined;
         switch (transactionType) {

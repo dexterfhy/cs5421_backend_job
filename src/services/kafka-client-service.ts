@@ -58,10 +58,6 @@ export class KafkaClientService {
         return this.admin.listTopics();
     }
 
-    public listGroups(): Promise<{ groups: GroupOverview[] }> {
-        return this.admin.listGroups();
-    }
-
     public producerSend(producerRecord: ProducerRecord, index: number): Promise<RecordMetadata[]> {
         return this.producers[index].send(producerRecord);
     }
@@ -69,16 +65,4 @@ export class KafkaClientService {
     public consumerRun(consumerRunConfig: ConsumerRunConfig, index: number): Promise<void> {
         return this.consumers[index].run(consumerRunConfig);
     }
-
-    // public getAdmin(): Admin {
-    //     return this.admin;
-    // }
-
-    // public getProducer(): Producer {
-    //     return this.producer;
-    // }
-
-    // public getConsumer(): Consumer {
-    //     return this.consumer;
-    // }
 }
