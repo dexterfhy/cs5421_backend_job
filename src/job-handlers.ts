@@ -204,41 +204,58 @@ export async function kafkaJobAttemptEventHandler(
             ))!.rows[0];
         const parsedTestCases: { id: number, data: string }[] = JSON.parse(test_cases);
         parsedTestCases.forEach(async (testCase: { id: number, data: string }) => {
-            const schemaName: string = `${challenge_name}_${jobAttemptEventValue.challenge_id}_${testCase.id}`;
-            const queryResult: any[] = (await postgreSQLAdapter.schematizedQuery(
-                schemaName,
-                { text: `${solution} EXCEPT ${jobAttemptEventValue.query}` },
-                postgreSQLQueryType
-            ))!.rows;
-            if (queryResult.length != 0) {
-                await kafkaClientService.producerSend({
-                    topic: KAFKA_JOB_ATTEMPT_COMPLETION_TOPIC,
-                    messages: [{
-                        key: jobAttemptEventValue.attempt_id.toString(),
-                        value: JSON.stringify({
-                            attempt_id: jobAttemptEventValue.attempt_id,
-                            user_id: jobAttemptEventValue.user_id,
-                            challenge_id: jobAttemptEventValue.challenge_id,
-                            test_case_id: testCase.id,
-                            status: KAFKA_JOB_ATTEMPT_COMPLETION_EVENT_STATUS_WRONG,
-                            actual_result: queryResult
-                        })
-                    }]
-                }, producerIndex);
-            } else {
-                let overallExecutionTimes = 0;
-                for (let i = 0; i < times_to_run; i++) {
-                    const queryResult: string[][] = (await postgreSQLAdapter.schematizedQuery(
-                        schemaName,
-                        { 
-                            text: `EXPLAIN ANALYZE ${jobAttemptEventValue.query}`,
-                            rowMode: "array"
-                        },
-                        postgreSQLQueryType
-                    ))!.rows;
-                    overallExecutionTimes += 
-                        parseFloat(queryResult[queryResult.length - 1][0].match(/^Execution Time: (\d+\.\d+) ms$/)![1]);
+            try {
+                const schemaName: string = `${challenge_name}_${jobAttemptEventValue.challenge_id}_${testCase.id}`;
+                const queryResult: any[] = (await postgreSQLAdapter.schematizedQuery(
+                    schemaName,
+                    { text: `${solution} EXCEPT ${jobAttemptEventValue.query}` },
+                    postgreSQLQueryType
+                ))!.rows;
+                if (queryResult.length != 0) {
+                    await kafkaClientService.producerSend({
+                        topic: KAFKA_JOB_ATTEMPT_COMPLETION_TOPIC,
+                        messages: [{
+                            key: jobAttemptEventValue.attempt_id.toString(),
+                            value: JSON.stringify({
+                                attempt_id: jobAttemptEventValue.attempt_id,
+                                user_id: jobAttemptEventValue.user_id,
+                                challenge_id: jobAttemptEventValue.challenge_id,
+                                test_case_id: testCase.id,
+                                status: KAFKA_JOB_ATTEMPT_COMPLETION_EVENT_STATUS_WRONG,
+                                actual_result: queryResult
+                            })
+                        }]
+                    }, producerIndex);
+                } else {
+                    let overallExecutionTimes = 0;
+                    for (let i = 0; i < times_to_run; i++) {
+                        const queryResult: string[][] = (await postgreSQLAdapter.schematizedQuery(
+                            schemaName,
+                            { 
+                                text: `EXPLAIN ANALYZE ${jobAttemptEventValue.query}`,
+                                rowMode: "array"
+                            },
+                            postgreSQLQueryType
+                        ))!.rows;
+                        overallExecutionTimes += 
+                            parseFloat(queryResult[queryResult.length - 1][0].match(/^Execution Time: (\d+\.\d+) ms$/)![1]);
+                    }
+                    await kafkaClientService.producerSend({
+                        topic: KAFKA_JOB_ATTEMPT_COMPLETION_TOPIC,
+                        messages: [{
+                            key: jobAttemptEventValue.attempt_id.toString(),
+                            value: JSON.stringify({
+                                attempt_id: jobAttemptEventValue.attempt_id,
+                                user_id: jobAttemptEventValue.user_id,
+                                challenge_id: jobAttemptEventValue.challenge_id,
+                                test_case_id: testCase.id,
+                                status: KAFKA_JOB_ATTEMPT_COMPLETION_EVENT_STATUS_CORRECT,
+                                execution_ms: overallExecutionTimes / times_to_run
+                            })
+                        }]
+                    }, producerIndex);
                 }
+            } catch (error) {
                 await kafkaClientService.producerSend({
                     topic: KAFKA_JOB_ATTEMPT_COMPLETION_TOPIC,
                     messages: [{
@@ -248,8 +265,8 @@ export async function kafkaJobAttemptEventHandler(
                             user_id: jobAttemptEventValue.user_id,
                             challenge_id: jobAttemptEventValue.challenge_id,
                             test_case_id: testCase.id,
-                            status: KAFKA_JOB_ATTEMPT_COMPLETION_EVENT_STATUS_CORRECT,
-                            execution_ms: overallExecutionTimes / times_to_run
+                            status: KAFKA_JOB_ATTEMPT_COMPLETION_EVENT_STATUS_FAILED,
+                            error: (error as Error).toString()
                         })
                     }]
                 }, producerIndex);
