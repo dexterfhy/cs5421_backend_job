@@ -1,5 +1,6 @@
 import { config } from "dotenv";
 import { ConsumerConfig, ConsumerSubscribeTopic, ITopicConfig, KafkaConfig, KafkaMessage, ProducerConfig } from "kafkajs";
+import { scheduleJob } from "node-schedule";
 import { cpus } from "os";
 import { join } from "path";
 import { 
@@ -19,7 +20,7 @@ import {
     KAFKA_JOB_INIT_TOPIC, KAFKA_JOB_INIT_TOPIC_NUM_PARTITIONS, KAFKA_JOB_INIT_TOPIC_REPLICATION_FACTOR 
 } from "./constants/kafka";
 import { 
-    PostgreSQLQueryType, POSTGRESQL_ADMIN_QUERY_TIMEOUT, POSTGRESQL_ADMIN_STATEMENT_TIMEOUT, POSTGRESQL_FAST_QUERY_TIMEOUT, 
+    PostgreSQLQueryType, POSTGRESQL_ADMIN_QUERY_TIMEOUT, POSTGRESQL_ADMIN_STATEMENT_TIMEOUT, POSTGRESQL_DAILY_CLEANUP_TIME, POSTGRESQL_FAST_QUERY_TIMEOUT, 
     POSTGRESQL_FAST_STATEMENT_TIMEOUT, POSTGRESQL_SLOW_QUERY_TIMEOUT, POSTGRESQL_SLOW_STATEMENT_TIMEOUT 
 } from "./constants/postgreSQL";
 import { kafkaJobAttemptEventHandler, kafkaJobInitEventHandler } from "./job-handlers";
@@ -178,6 +179,39 @@ import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
         }
     );
     console.log("KafkaClientService singleton instance has been created successfully");
+
+    scheduleJob(POSTGRESQL_DAILY_CLEANUP_TIME, async () => {
+        const expiredChallenges: { challenge_id: number, challenge_name: string, test_cases: string }[] = 
+            (await postgreSQLAdapter.schematizedQuery(
+                "public",
+                { 
+                    text: 
+                        `SELECT challenge_id, challenge_name, test_cases FROM 
+                        ${process.env.DB_CHALLENGE_TABLE_NAME!} WHERE expires_at < $1`,
+                    values: [new Date()]
+                },
+                PostgreSQLQueryType.ADMIN_QUERY
+            ))!.rows;
+        for (const expiredChallenge of expiredChallenges) {
+            const { challenge_id, challenge_name, test_cases }: 
+                { challenge_id: number, challenge_name: string, test_cases: string } = expiredChallenge;
+            const parsedTestCases: { id: number, data: string }[] = JSON.parse(test_cases);
+            await postgreSQLAdapter.transaction(
+                [
+                    { text: "SET search_path TO public" },
+                    ...parsedTestCases.map((testCase: { id: number, data: string }) => {
+                        const schemaName: string = `${challenge_name}_${challenge_id}_${testCase.id}`;
+                        return { text: `DROP SCHEMA IF EXISTS ${schemaName} CASCADE` };
+                    }),
+                    { 
+                        text: `DELETE FROM ${process.env.DB_CHALLENGE_TABLE_NAME!} WHERE challenge_id = $1`,
+                        values: [challenge_id]
+                    }
+                ],
+                PostgreSQLQueryType.ADMIN_QUERY
+            );
+        }
+    });
     
     kafkaClientService.consumerRun({
         partitionsConsumedConcurrently: 1,
