@@ -20,8 +20,9 @@ import {
     KAFKA_JOB_INIT_TOPIC, KAFKA_JOB_INIT_TOPIC_NUM_PARTITIONS, KAFKA_JOB_INIT_TOPIC_REPLICATION_FACTOR 
 } from "./constants/kafka";
 import { 
-    PostgreSQLQueryType, POSTGRESQL_ADMIN_QUERY_TIMEOUT, POSTGRESQL_ADMIN_STATEMENT_TIMEOUT, POSTGRESQL_DAILY_CLEANUP_TIME, POSTGRESQL_FAST_QUERY_TIMEOUT, 
-    POSTGRESQL_FAST_STATEMENT_TIMEOUT, POSTGRESQL_SLOW_QUERY_TIMEOUT, POSTGRESQL_SLOW_STATEMENT_TIMEOUT 
+    PostgreSQLQueryType, POSTGRESQL_ADMIN_QUERY_TIMEOUT, POSTGRESQL_ADMIN_STATEMENT_TIMEOUT, 
+    POSTGRESQL_DAILY_CLEANUP_TIME, POSTGRESQL_FAST_QUERY_TIMEOUT, POSTGRESQL_FAST_STATEMENT_TIMEOUT, 
+    POSTGRESQL_SLOW_QUERY_TIMEOUT, POSTGRESQL_SLOW_STATEMENT_TIMEOUT 
 } from "./constants/postgreSQL";
 import { kafkaJobAttemptEventHandler, kafkaJobInitEventHandler } from "./job-handlers";
 import { KafkaClientService } from './services/kafka-client-service';
@@ -212,7 +213,7 @@ import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
             );
         }
     });
-    
+
     kafkaClientService.consumerRun({
         partitionsConsumedConcurrently: 1,
         eachMessage: async ({ topic, message, heartbeat }) => {
@@ -270,155 +271,3 @@ function registerEventHandlers(
            .on("SIGINT", signalHandler)
            .on("SIGTERM", signalHandler);
 }
-
-
-// const kafka = new Kafka({
-//     clientId: 'job-server-kafka',
-//     brokers: ['localhost:9092']
-// });
-
-// const consumer = kafka.consumer({groupId: 'haha'});
-// consumer.run({
-//     eachMessage: 
-// })
-
-// const admin = kafka.admin();
-// admin.connect().then(() => console.log('hello'));
-// admin.deleteTopics({topics: ['example', 'example1']}).then(console.log)
-// admin.listTopics().then(x => console.log(x, x.includes('example')))
-// admin.describeCluster().then(console.log)
-// admin.listGroups().then(console.log);
-// admin.createTopics({
-//     validateOnly: false,
-//     topics: [{
-//         topic: 'example',
-//         numPartitions: 2,
-//         replicationFactor: 1
-//     }, {
-//         topic: 'example1',
-//         numPartitions: 2,
-//         replicationFactor: 1
-//     }]
-// }).then((result) => console.log(result));
-
-
-// const pool = new Pool({
-//     host: 'localhost',
-//     port: 5432,
-//     database: 'example',
-//     user: 'postgres',
-//     password: 'password'
-// });
-
-// pool.query({text: 'EXPLAIN ANALYZE SELECT * FROM items NATURAL JOIN warehouses NATURAL JOIN stocks;'}).then(console.log);
-
-// const myPool = new PostgreSQLAdapter({
-//     adminUsername: 'postgres',
-//     host: 'localhost',
-//     database: 'example',
-//     adminPassword: 'password',
-//     ordinaryUsername: 'postgres',
-//     ordinaryPassword: 'password',
-//     adminQueryPoolMaxConnections: 1,
-//     fastQueryPoolMaxConnections: 1,
-//     slowQueryPoolMaxConnections: 1,
-//     port: 5432
-// });
-// PostgreSQLAdapter.execute("select 1; select now();", {
-//     host: "localhost",
-//     port: 5432,
-//     dbname: "example",
-//     username: "postgres",
-//     password: "password"
-// }).then((result) => console.log(result));
-// console.log(process.env.PGPASSWORD);
-
-// import {spawn} from 'child_process';
-// const result = spawn('psql', ['--host=localhost', '--port=5432', '--username=postgres', '--dbname=example', '--file=/Users/yisong.yu/test_sql_file.txt']);
-// result.stdout.on('data', (data) => console.log('normal: ', data.toString()));
-// result.stderr.on('data', (data) => console.log('error: ', data.toString()));
-// result.on('close', (code) => console.log('code status: ', code));
-// console.log(result.stderr.toString());
-// import {randomBytes} from 'crypto';
-// import {writeFileSync, unlink} from 'fs';
-// import { PostgreSQLConnectionStringBuilder } from "./utils/postgreSQL-connection-string-builder";
-// console.log(PostgreSQLConnectionStringBuilder.build({
-//     host: "localhost",
-//     port: 5432,
-//     dbname: "example",
-//     username: "postgres",
-//     password: "password"
-// }));
-
-// console.log(writeFileSync(__dirname + '/test.txt', 'hahahaha'));
-// unlink(__dirname + '/test.txt', (err) => {});
-
-// console.log(['--port', 2].join('='));
-// myPool
-//     .query({text: 'EXPLAIN ANALYZE SELECT * FROM items NATURAL JOIN warehouses NATURAL JOIN stocks;'}, QueryType.ADMIN_QUERY)
-//     .then(console.log);
-// setInterval(() => pool.query({text: 'EXPLAIN ANALYZE SELECT * FROM items', rowMode: 'array'}, (err, res) => {
-//     console.log(res);
-// }), 2000);
-// import process from 'process';
-// process.on("SIGINT", () => {
-//     console.log('received signal');
-//     process.exit();
-// });
-// process.on("exit", (x) => {
-//     console.log('haha' + x);
-//     pool.end();
-// });
-
-//   pool.query({text: 'EXPLAIN ANALYZE SELECT * FROM items', rowMode: 'array'}, (err, res) => {
-//     console.log(res)
-//     pool.end()
-//   });
-// (async () => {
-//     console.log('starting async query')
-//     const result = await pool.query('SELECT NOW()')
-//     console.log('async query finished')
-//     console.log('starting callback query')
-//     pool.query('SELECT NOW()', (err, res) => {
-//       console.log('callback query finished')
-//     })
-//     console.log('calling end')
-//     await pool.end()
-//     console.log('pool has drained')
-//   })();
-
-// const client = new Client({
-//     user: 'postgres',
-//     host: 'localhost',
-//     database: 'example',
-//     password: 'password',
-//     port: 5432,
-// });
-
-// import {spawn} from "child_process";
-
-
-// const schema_name = "testhaha";
-// client.connect();
-// client.query("select now();", (err, res) => {
-//     console.log(res.rows);
-// })
-// client.query(`CREATE SCHEMA IF NOT EXISTS ${schema_name}`, (err, res) => {
-//     console.log(res.rows)
-//     client.query(`SET search_path TO ${schema_name}`, (err, res) => {
-//         console.log(res.rows)
-//         client.query("CREATE TABLE IF NOT EXISTS lol (i int);", (err, res) => {
-//             console.log(res.rows);
-//             client.end();
-//         })
-//     });
-// });
-
-
-// const client = new Client()
-// client.connect()
-// client.query('SELECT $1::text as message', ['Hello world!'], (err, res) => {
-//   console.log(err ? err.stack : res.rows[0].message) // Hello World!
-//   client.end()
-// })
-
