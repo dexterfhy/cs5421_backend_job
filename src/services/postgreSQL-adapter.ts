@@ -50,6 +50,7 @@ export class PostgreSQLAdapter {
         if (!PostgreSQLAdapter.postgreSQLAdapter) {
             PostgreSQLAdapter.postgreSQLAdapter = new PostgreSQLAdapter(adapterConfig);
         }
+        console.log(`[PostgreSQL Adapter - Initialize] PostgreSQLAdapter singleton instance has been initialized successfully`);
         return PostgreSQLAdapter.postgreSQLAdapter;
     }
 
@@ -95,10 +96,12 @@ export class PostgreSQLAdapter {
             await PostgreSQLAdapter.postgreSQLAdapter.fastQueryPool.end();
             await PostgreSQLAdapter.postgreSQLAdapter.slowQueryPool.end();
             PostgreSQLAdapter.postgreSQLAdapter = undefined;
+            console.log(`[PostgreSQL Adapter - Terminate] PostgreSQLAdapter singleton instance has been terminated gracefully`);
         }
     }
 
     public async query(query: PostgreSQLQuery, queryType: PostgreSQLQueryType): Promise<void | QueryResult<any>> {
+        console.log(`[PostgreSQL Adapter - Query] query: ${JSON.stringify(query)}, queryType: ${queryType}`);
         switch (queryType) {
             case PostgreSQLQueryType.ADMIN_QUERY:
                 return this.adminQueryPool.query(query);
@@ -112,6 +115,7 @@ export class PostgreSQLAdapter {
     }
 
     public async schematizedQuery(schemaName: string, query: PostgreSQLQuery, queryType: PostgreSQLQueryType): Promise<void | QueryResult<any>> {
+        console.log(`[PostgreSQL Adapter - Schematized Query] schemaName: ${schemaName}, query: ${JSON.stringify(query)}, queryType: ${queryType}`);
         let client: PoolClient | undefined;
         let queryResult: QueryResult<any> | undefined;
         switch (queryType) {
@@ -132,10 +136,12 @@ export class PostgreSQLAdapter {
         } finally {
             client.release();
         }
+        console.log(`[PostgreSQL Adapter - Schematized Query] queryResult: ${queryResult}`);
         return queryResult;
     }
 
     public async transaction(queries: PostgreSQLQuery[], transactionType: PostgreSQLQueryType): Promise<void> {
+        console.log(`[PostgreSQL Adapter - Transaction] queries: ${JSON.stringify(queries)}, transactionType: ${transactionType}`);
         let client: PoolClient | undefined;
         switch (transactionType) {
             case PostgreSQLQueryType.ADMIN_QUERY:
@@ -151,12 +157,16 @@ export class PostgreSQLAdapter {
         }
         try {
             await client.query("BEGIN");
+            console.log(`[PostgreSQL Adapter - Transaction] BEGIN`);
             for (const query of queries) {
                 await client.query(query);
             }
             await client.query("COMMIT");
+            console.log(`[PostgreSQL Adapter - Transaction] COMMIT`);
         } catch (error) {
             await client.query("ROLLBACK");
+            console.log(`[PostgreSQL Adapter - Transaction] ROLLBACK`);
+            console.log(`[PostgreSQL Adapter - Transaction] Error: ${(error as Error).message}`);
             throw error;
         } finally {
             client.release()
@@ -167,6 +177,7 @@ export class PostgreSQLAdapter {
         statements: string, 
         statementsExecutionConfig: PostgreSQLStatementsExecutionConfig
     ): Promise<[string, string]> {
+        console.log(`[PostgreSQL Adapter - Execute] statements: ${statements}, statementsExecutionConfig: ${JSON.stringify(statementsExecutionConfig)}`);
         return new Promise(async (resolve, reject) => {
             try {
                 const filename = randomBytes(20).toString("hex");
@@ -195,6 +206,7 @@ export class PostgreSQLAdapter {
                     } catch (fileDeletionError) {
                         console.error(fileDeletionError);
                     } finally {
+                        console.log(`[PostgreSQL Adapter - Execute] onError: ${error.message}`);
                         reject("Process error: " + error);
                     }
                 });
@@ -204,10 +216,12 @@ export class PostgreSQLAdapter {
                     } catch (fileDeletionError) {
                         console.error(fileDeletionError);
                     } finally {
+                        console.log(`[PostgreSQL Adapter - Execute] onClose(stdout): ${stdoutDataChunks.join("")}, onClose(stderr): ${stderrDataChunks.join("")}`);
                         code !== 0 ? reject(code) : resolve([stdoutDataChunks.join(""), stderrDataChunks.join("")]);
                     }
                 });
             } catch (error) {
+                console.log(`[PostgreSQL Adapter - Execute] Error: ${(error as Error).message}`);
                 reject(error);
             }
         });

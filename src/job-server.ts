@@ -36,7 +36,7 @@ import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
         .forEach(loadResult => {
             if (loadResult.error) throw loadResult.error
         });
-    console.log("Environment has been initialized successfully");
+    console.log("[Job Server] Environment has been initialized successfully");
 
     const postgreSQLAdapter: PostgreSQLAdapter = PostgreSQLAdapter.initialize({
         host: process.env.DB_HOST,
@@ -59,17 +59,16 @@ import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
     });
     registerEventHandlers(
         async (code) => {
-            console.log(`PostgreSQLAdapter instance cleans up allocated resources before Job Server terminates with an exit code ${code}`);
+            console.log(`[Job Server] PostgreSQLAdapter instance cleans up allocated resources before Job Server terminates with an exit code ${code}`);
             await PostgreSQLAdapter.terminate();
         },
         async () => {
-            console.log(`PostgreSQLAdapter instance cleans up allocated resources before Job Server is terminated by a signal with an exit code ${process.exitCode}`);
+            console.log(`[Job Server] PostgreSQLAdapter instance cleans up allocated resources before Job Server is terminated by a signal with an exit code ${process.exitCode}`);
             await PostgreSQLAdapter.terminate();
             process.exit();
         }
     );
-    console.log("PostgreSQLAdapter singleton instance has been created successfully");
-
+    console.log("[Job Server] PostgreSQLAdapter singleton instance has been created successfully");
     const { rows }: { rows: boolean[][] } = (await postgreSQLAdapter.query({
         text: "SELECT EXISTS (SELECT * FROM pg_tables WHERE schemaname = 'public' AND tablename = $1)",
         values: [process.env.DB_CHALLENGE_TABLE_NAME!],
@@ -92,7 +91,7 @@ import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
             }, 
             PostgreSQLQueryType.ADMIN_QUERY
         );
-        console.log("Challenge table has been successfully created");
+        console.log(`[Job Server] The table ${process.env.DB_CHALLENGE_TABLE_NAME!} has been successfully created`);
     }
 
     const kafkaConfig: KafkaConfig = {
@@ -170,16 +169,16 @@ import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
     );
     registerEventHandlers(
         async (code) => {
-            console.log(`KafkaClientService instance cleans up allocated resources before Job Server terminates with an exit code ${code}`);
+            console.log(`[Job Server] KafkaClientService instance cleans up allocated resources before Job Server terminates with an exit code ${code}`);
             await KafkaClientService.terminate();
         },
         async () => {
-            console.log(`KafkaClientService instance cleans up allocated resources before Job Server is terminated by a signal with an exit code ${process.exitCode}`);
+            console.log(`[Job Server] KafkaClientService instance cleans up allocated resources before Job Server is terminated by a signal with an exit code ${process.exitCode}`);
             await KafkaClientService.terminate();
             process.exit();
         }
     );
-    console.log("KafkaClientService singleton instance has been created successfully");
+    console.log("[Job Server] KafkaClientService singleton instance has been created successfully");
 
     scheduleJob(POSTGRESQL_DAILY_CLEANUP_TIME, async () => {
         const expiredChallenges: { challenge_id: number, challenge_name: string, test_cases: string }[] = 
@@ -217,6 +216,7 @@ import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
     kafkaClientService.consumerRun({
         partitionsConsumedConcurrently: 1,
         eachMessage: async ({ topic, message, heartbeat }) => {
+            console.log(`[Job Server] Kafka Consumer received a message from the topic ${topic} with the content ${JSON.stringify(message)}`);
             if (topic == KAFKA_JOB_INIT_TOPIC) {
                 await kafkaJobInitEventHandler(
                     postgreSQLAdapter, 
@@ -233,6 +233,7 @@ import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
     kafkaClientService.consumerRun({
         partitionsConsumedConcurrently: cpus().length,
         eachMessage: async ({ topic, message, heartbeat }) => {
+            console.log(`[Job Server] Kafka Consumer received a message from the topic ${topic} with the content ${JSON.stringify(message)}`);
             if (topic == KAFKA_JOB_ATTEMPT_FAST_TOPIC) {
                 await kafkaJobAttemptEventHandler(
                     postgreSQLAdapter,
@@ -249,6 +250,7 @@ import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
     kafkaClientService.consumerRun({
         partitionsConsumedConcurrently: cpus().length,
         eachMessage: async ({ topic, message, heartbeat }) => {
+            console.log(`[Job Server] Kafka Consumer received a message from the topic ${topic} with the content ${JSON.stringify(message)}`);
             if (topic == KAFKA_JOB_ATTEMPT_SLOW_TOPIC) {
                 await kafkaJobAttemptEventHandler(
                     postgreSQLAdapter,

@@ -37,14 +37,16 @@ export async function kafkaJobInitEventHandler(
     message: KafkaMessage, 
     heartbeat: () => Promise<void>
 ): Promise<void> {
-    const heartbeatTimer: NodeJS.Timer = setInterval(heartbeat, KAFKA_JOB_INIT_CONSUMER_HEARTBEAT_INTERVAL)
+    const heartbeatTimer: NodeJS.Timer = setInterval(heartbeat, KAFKA_JOB_INIT_CONSUMER_HEARTBEAT_INTERVAL);
     const jobInitEventValue: JobInitEventValue = JSON.parse(message.value!.toString());
+    console.log(`[Job Handler - JobInitEventHandler] message: ${JSON.stringify(jobInitEventValue)}`);
     try {
         const { rows }: { rows: boolean[][] } = (await postgreSQLAdapter.schematizedQuery("public", {
             text: `SELECT EXISTS (SELECT * FROM ${process.env.DB_CHALLENGE_TABLE_NAME!} WHERE challenge_id = $1)`,
             values: [jobInitEventValue.challenge_id.toString()],
             rowMode: 'array'
         }, postgreSQLQueryType))!;
+        console.log(`[Job Handler - JobIniitEventHandler] rows: ${JSON.stringify(rows)}`);
         if (rows[0][0]) {
             await postgreSQLAdapter.schematizedQuery("public", {
                 text: `UPDATE ${process.env.DB_CHALLENGE_TABLE_NAME!} SET expires_at = $1 WHERE challenge_id = $2`,
@@ -63,14 +65,18 @@ export async function kafkaJobInitEventHandler(
         } else {
             const createStatements: { text: string }[] = 
                 jobInitEventValue.init!.split(";").filter(statement => statement).map(statement => ({ text: statement }));
+            console.log(`[Job Handler - JobInitEventHandler] createStatements: ${JSON.stringify(createStatements)}`);
+            jobInitEventValue.challenge_name = jobInitEventValue.challenge_name!.split(/(\s+)/).filter((word: string) => word.trim().length > 0).join("_");
+            console.log(`[Job Handler - JobInitEventHandler] cleaned jobInitEventValue.challenge_name: ${jobInitEventValue.challenge_name!}`);
             jobInitEventValue.solution = jobInitEventValue.solution!.trim();
             jobInitEventValue.solution = 
-                jobInitEventValue.solution![length - 1] == ";" ? 
+                jobInitEventValue.solution![jobInitEventValue.solution!.length - 1] == ";" ? 
                     jobInitEventValue.solution!.slice(0, jobInitEventValue.solution!.length - 1) : jobInitEventValue.solution!;
+            console.log(`[Job Handler - JobInitEventHandler] cleaned jobInitEventValue.solution: ${jobInitEventValue.solution!}`);
             try {
                 await postgreSQLAdapter.transaction(
                     jobInitEventValue.test_cases!.flatMap((testCase: { id: number, data: string }) => {
-                        const schemaName = `${jobInitEventValue.challenge_name}_${jobInitEventValue.challenge_id}_${testCase.id}`;
+                        const schemaName = `${jobInitEventValue.challenge_name!}_${jobInitEventValue.challenge_id}_${testCase.id}`;
                         return [
                             { text: "SET search_path TO public" },
                             { text: `DROP SCHEMA IF EXISTS ${schemaName} CASCADE` },
@@ -83,8 +89,8 @@ export async function kafkaJobInitEventHandler(
                 const [_, stderrData] = await PostgreSQLAdapter.execute(
                     jobInitEventValue.test_cases!.map((testCase: { id: number, data: string }) => {
                         const trimedStatements = testCase.data.trim();
-                        return `SET search_path TO ${jobInitEventValue.challenge_name}_${jobInitEventValue.challenge_id}_${testCase.id};` + 
-                                (trimedStatements[trimedStatements.length - 1] == ";" ? trimedStatements : (trimedStatements + ";"))
+                        return `SET search_path TO ${jobInitEventValue.challenge_name!}_${jobInitEventValue.challenge_id}_${testCase.id};` + 
+                                (trimedStatements[trimedStatements.length - 1] == ";" ? trimedStatements : (trimedStatements + ";"));
                     }).join(""), 
                     {
                         host: process.env.DB_HOST,
@@ -128,6 +134,7 @@ export async function kafkaJobInitEventHandler(
                             };
                         })
                     );
+                console.log(`[Kafka Client Service - JobInitEventHandler] expected_results: ${JSON.stringify(expected_results)}`);
                 await kafkaClientService.producerSend({
                     topic: KAFKA_JOB_INIT_COMPLETION_TOPIC,
                     messages: [{
@@ -163,6 +170,7 @@ export async function kafkaJobInitEventHandler(
             }
         }
     } catch (error) {
+        console.log(`[Kafka Client Service - JobInitEventHandler] Error: ${(error as Error).message}`);
         await kafkaClientService.producerSend({
             topic: KAFKA_JOB_INIT_COMPLETION_TOPIC,
             messages: [{
@@ -187,8 +195,9 @@ export async function kafkaJobAttemptEventHandler(
     message: KafkaMessage, 
     heartbeat: () => Promise<void>
 ) {
-    const heartbeatTimer: NodeJS.Timer = setInterval(heartbeat, KAFKA_JOB_INIT_CONSUMER_HEARTBEAT_INTERVAL)
+    const heartbeatTimer: NodeJS.Timer = setInterval(heartbeat, KAFKA_JOB_INIT_CONSUMER_HEARTBEAT_INTERVAL);
     const jobAttemptEventValue: JobAttemptEventValue = JSON.parse(message.value!.toString());
+    console.log(`[Job Handler - JobAttemptEventHandler] message: ${JSON.stringify(jobAttemptEventValue)}`);
     try {
         const { challenge_name, test_cases, solution, times_to_run }: 
             { challenge_name: string, test_cases: string, solution: string, times_to_run: number } = 
@@ -202,6 +211,7 @@ export async function kafkaJobAttemptEventHandler(
                 },
                 PostgreSQLQueryType.ADMIN_QUERY
             ))!.rows[0];
+        console.log(`[Job Handler - JobAttemptEventHandler] challenge_name: ${challenge_name}, test_cases: ${test_cases}, solution: ${solution}, times_to_run: ${times_to_run}`);
         const parsedTestCases: { id: number, data: string }[] = JSON.parse(test_cases);
         parsedTestCases.forEach(async (testCase: { id: number, data: string }) => {
             try {
@@ -211,6 +221,7 @@ export async function kafkaJobAttemptEventHandler(
                     { text: `${solution} EXCEPT ${jobAttemptEventValue.query}` },
                     postgreSQLQueryType
                 ))!.rows;
+                console.log(`[Job Handler - JobAttemptEventHandler] queryResult(correctness): ${JSON.stringify(queryResult)}`);
                 if (queryResult.length != 0) {
                     await kafkaClientService.producerSend({
                         topic: KAFKA_JOB_ATTEMPT_COMPLETION_TOPIC,
@@ -237,6 +248,7 @@ export async function kafkaJobAttemptEventHandler(
                             },
                             postgreSQLQueryType
                         ))!.rows;
+                        console.log(`[Job Handler - JobAttemptEventHandler] queryResult(efficiency-iteration_${i}): ${JSON.stringify(queryResult)}`);
                         overallExecutionTimes += 
                             parseFloat(queryResult[queryResult.length - 1][0].match(/^Execution Time: (\d+\.\d+) ms$/)![1]);
                     }
@@ -256,6 +268,7 @@ export async function kafkaJobAttemptEventHandler(
                     }, producerIndex);
                 }
             } catch (error) {
+                console.log(`[Job Handler - JobAttemptEventHandler] Error(test_case_${testCase.id}): ${(error as Error).message}`);
                 await kafkaClientService.producerSend({
                     topic: KAFKA_JOB_ATTEMPT_COMPLETION_TOPIC,
                     messages: [{
@@ -273,6 +286,7 @@ export async function kafkaJobAttemptEventHandler(
             }
         })
     } catch (error) {
+        console.log(`[Job Handler - JobAttemptEventHandler] Error: ${(error as Error).message}`);
         await kafkaClientService.producerSend({
             topic: KAFKA_JOB_ATTEMPT_COMPLETION_TOPIC,
             messages: [{
