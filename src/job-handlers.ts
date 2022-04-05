@@ -142,7 +142,7 @@ export async function kafkaJobInitEventHandler(
                         value: JSON.stringify({
                             challenge_id: jobInitEventValue.challenge_id,
                             status: KAFKA_JOB_INIT_COMPLETION_EVENT_STATUS_COMPLETED,
-                            expected_results: expected_results
+                            expected_results: JSON.stringify(expected_results)
                         })
                     }]
                 }, producerIndex);
@@ -233,7 +233,7 @@ export async function kafkaJobAttemptEventHandler(
                                 challenge_id: jobAttemptEventValue.challenge_id,
                                 test_case_id: testCase.id,
                                 status: KAFKA_JOB_ATTEMPT_COMPLETION_EVENT_STATUS_WRONG,
-                                actual_result: queryResult
+                                actual_result: JSON.stringify(queryResult)
                             })
                         }]
                     }, producerIndex);

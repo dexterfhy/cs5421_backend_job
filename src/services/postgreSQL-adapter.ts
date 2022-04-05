@@ -136,7 +136,7 @@ export class PostgreSQLAdapter {
         } finally {
             client.release();
         }
-        console.log(`[PostgreSQL Adapter - Schematized Query] queryResult: ${queryResult}`);
+        console.log(`[PostgreSQL Adapter - Schematized Query] queryResult: ${JSON.stringify(queryResult)}`);
         return queryResult;
     }
 
