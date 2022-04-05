@@ -211,14 +211,18 @@ export async function kafkaJobAttemptEventHandler(
                 },
                 PostgreSQLQueryType.ADMIN_QUERY
             ))!.rows[0];
-        console.log(`[Job Handler - JobAttemptEventHandler] challenge_name: ${challenge_name}, test_cases: ${test_cases}, solution: ${solution}, times_to_run: ${times_to_run}`);
-        const parsedTestCases: { id: number, data: string }[] = JSON.parse(test_cases);
+        console.log(`[Job Handler - JobAttemptEventHandler] challenge_name: ${challenge_name}, test_cases: ${JSON.stringify(test_cases)}, solution: ${JSON.stringify(solution)}, times_to_run: ${times_to_run}`);
+        const parsedTestCases: { id: number, data: string }[] = JSON.parse(JSON.stringify(test_cases));
         parsedTestCases.forEach(async (testCase: { id: number, data: string }) => {
             try {
+                jobAttemptEventValue.query = jobAttemptEventValue.query.trim();
+                jobAttemptEventValue.query = 
+                    jobAttemptEventValue.query[jobAttemptEventValue.query.length - 1] == ";" ? 
+                        jobAttemptEventValue.query.slice(0, jobAttemptEventValue.query.length - 1) : jobAttemptEventValue.query;
                 const schemaName: string = `${challenge_name}_${jobAttemptEventValue.challenge_id}_${testCase.id}`;
                 const queryResult: any[] = (await postgreSQLAdapter.schematizedQuery(
                     schemaName,
-                    { text: `${solution} EXCEPT ${jobAttemptEventValue.query}` },
+                    { text: `(${solution}) EXCEPT (${jobAttemptEventValue.query})` },
                     postgreSQLQueryType
                 ))!.rows;
                 console.log(`[Job Handler - JobAttemptEventHandler] queryResult(correctness): ${JSON.stringify(queryResult)}`);
