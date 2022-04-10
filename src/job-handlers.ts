@@ -220,13 +220,19 @@ export async function kafkaJobAttemptEventHandler(
                     jobAttemptEventValue.query[jobAttemptEventValue.query.length - 1] == ";" ? 
                         jobAttemptEventValue.query.slice(0, jobAttemptEventValue.query.length - 1) : jobAttemptEventValue.query;
                 const schemaName: string = `${challenge_name}_${jobAttemptEventValue.challenge_id}_${testCase.id}`;
-                const queryResult: any[] = (await postgreSQLAdapter.schematizedQuery(
+                const queryResult1: any[] = (await postgreSQLAdapter.schematizedQuery(
                     schemaName,
                     { text: `(${solution}) EXCEPT (${jobAttemptEventValue.query})` },
                     postgreSQLQueryType
                 ))!.rows;
-                console.log(`[Job Handler - JobAttemptEventHandler] queryResult(correctness): ${JSON.stringify(queryResult)}`);
-                if (queryResult.length != 0) {
+                const queryResult2: any[] = (await postgreSQLAdapter.schematizedQuery(
+                    schemaName,
+                    { text: `(${jobAttemptEventValue.query}) EXCEPT (${solution})` },
+                    postgreSQLQueryType
+                ))!.rows;
+                console.log(`[Job Handler - JobAttemptEventHandler] queryResult1(correctness): ${JSON.stringify(queryResult1)}`);
+                console.log(`[Job Handler - JobAttemptEventHandler] queryResult1(correctness): ${JSON.stringify(queryResult2)}`);
+                if (queryResult1.length != 0 || queryResult2.length != 0) {
                     await kafkaClientService.producerSend({
                         topic: KAFKA_JOB_ATTEMPT_COMPLETION_TOPIC,
                         messages: [{
@@ -237,7 +243,13 @@ export async function kafkaJobAttemptEventHandler(
                                 challenge_id: jobAttemptEventValue.challenge_id,
                                 test_case_id: testCase.id,
                                 status: KAFKA_JOB_ATTEMPT_COMPLETION_EVENT_STATUS_WRONG,
-                                actual_result: JSON.stringify(queryResult)
+                                actual_result: JSON.stringify((
+                                    await postgreSQLAdapter.schematizedQuery(
+                                        schemaName,
+                                        { text: jobAttemptEventValue.query },
+                                        postgreSQLQueryType
+                                    )
+                                )!.rows)
                             })
                         }]
                     }, producerIndex);

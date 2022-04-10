@@ -52,9 +52,9 @@ import { PostgreSQLAdapter } from "./services/postgreSQL-adapter";
         fastQueryTimeout: POSTGRESQL_FAST_QUERY_TIMEOUT,
         slowStatementTimeout: POSTGRESQL_SLOW_STATEMENT_TIMEOUT,
         slowQueryTimeout: POSTGRESQL_SLOW_QUERY_TIMEOUT,
-        adminQueryPoolMaxConnections: 2,
-        fastQueryPoolMaxConnections: parseInt(process.env.DB_HOST_NUM_CPUS!) / 2,
-        slowQueryPoolMaxConnections: parseInt(process.env.DB_HOST_NUM_CPUS!) / 2,
+        adminQueryPoolMaxConnections: 1,
+        fastQueryPoolMaxConnections: Math.round(parseInt(process.env.DB_HOST_NUM_CPUS!) / 4) > 0 ? Math.round(parseInt(process.env.DB_HOST_NUM_CPUS!) / 4) : 1,
+        slowQueryPoolMaxConnections: Math.round(parseInt(process.env.DB_HOST_NUM_CPUS!) / 4) > 0 ? Math.round(parseInt(process.env.DB_HOST_NUM_CPUS!) / 4) : 1,
         applicationName: process.env.DB_APPLICATION_NAME
     });
     registerEventHandlers(
